@@ -8,7 +8,6 @@ import java.util.List;
 import javax.sql.DataSource;
 import org.apache.ibatis.io.VFS;
 import org.apache.ibatis.session.SqlSessionFactory;
-import org.mybatis.spring.SqlSessionFactoryBean;
 import org.mybatis.spring.boot.autoconfigure.SpringBootVFS;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -22,6 +21,7 @@ import org.springframework.core.type.classreading.CachingMetadataReaderFactory;
 import org.springframework.core.type.classreading.MetadataReader;
 import org.springframework.core.type.classreading.MetadataReaderFactory;
 import org.springframework.util.ClassUtils;
+import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.ruoyi.common.utils.StringUtils;
 
 /**
@@ -122,7 +122,8 @@ public class MyBatisConfig
         typeAliasesPackage = setTypeAliasesPackage(typeAliasesPackage);
         VFS.addImplClass(SpringBootVFS.class);
 
-        final SqlSessionFactoryBean sessionFactory = new SqlSessionFactoryBean();
+        // Use MybatisSqlSessionFactoryBean instead of SqlSessionFactoryBean for MyBatis-Plus support
+        final MybatisSqlSessionFactoryBean sessionFactory = new MybatisSqlSessionFactoryBean();
         sessionFactory.setDataSource(dataSource);
         sessionFactory.setTypeAliasesPackage(typeAliasesPackage);
         sessionFactory.setMapperLocations(resolveMapperLocations(StringUtils.split(mapperLocations, ",")));

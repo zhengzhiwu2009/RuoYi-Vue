@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.ailearn.course.mapper.QuestionMapper">
+    <select id="getQuestionList" resultType="com.ruoyi.ailearn.course.model.vo.QuestionVO">
+        SELECT
+            id,
+            problem as content,
+            options as optionsJson,
+            answer_items as answerJson,
+            type,
+            explanation
+        FROM
+            question
+        WHERE
+            kpoint_id = #{kpointId}
+        LIMIT 100
+    </select>
+</mapper>

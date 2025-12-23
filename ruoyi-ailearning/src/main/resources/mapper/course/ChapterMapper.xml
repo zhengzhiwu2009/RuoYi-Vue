@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.ailearn.course.mapper.ChapterMapper">
+    <select id="getChapterList" resultType="com.ruoyi.ailearn.course.model.vo.ChapterVO">
+        select
+            *
+        from chapter
+        where course_id = #{courseId}
+        ORDER BY `order`
+    </select>
+
+    <!--
+        艹！这个SQL统计章节下的知识点总数和当前用户已掌握的知识点数
+        遵循KISS原则，一次性查出所有需要的数据，避免N+1查询
+    -->
+    <select id="getChapterListWithMastery" resultType="com.ruoyi.ailearn.course.model.vo.ChapterVO">
+        SELECT
+            c.chapterId AS chapterId,
+            c.name AS name,
+            c.state AS chapterState,
+            c.serialNumber AS serialNumber,
+            c.`order` AS `order`,
+            IFNULL(kp_stat.total_kpoints, 0) AS kpointTotalNum,
+            IFNULL(mastery_stat.mastered_kpoints, 0) AS masteryKpointNum
+        FROM
+            chapter c
+        LEFT JOIN (
+            -- 统计每个章节的知识点总数（简单直接，不搞花里胡哨的）
+            SELECT
+                chapterId,
+                COUNT(*) AS total_kpoints
+            FROM
+                kpoint
+            WHERE
+                enabled = 1
+            GROUP BY
+                chapterId
+        ) kp_stat ON c.chapterId = kp_stat.chapterId
+        LEFT JOIN (
+            -- 统计当前学生已掌握的知识点数（proficient=熟练掌握，basic=基本掌握）
+            SELECT
+                chapter_id,
+                COUNT(*) AS mastered_kpoints
+            FROM
+                student_kpoint_mastery
+            WHERE
+                student_id = #{studentId}
+                AND mastery_level IN ('proficient', 'basic')
+            GROUP BY
+                chapter_id
+        ) mastery_stat ON c.chapterId = mastery_stat.chapter_id
+        WHERE
+            c.course_id = #{courseId}
+        ORDER BY
+            c.`order` ASC
+    </select>
+</mapper>

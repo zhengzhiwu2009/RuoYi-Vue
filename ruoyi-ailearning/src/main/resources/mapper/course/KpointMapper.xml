@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.ailearn.course.mapper.KpointMapper">
+    <select id="getKpointList" resultType="com.ruoyi.ailearn.course.model.vo.KpointVO">
+        SELECT
+            kpoint.kpointId,
+            kpoint.chapterId,
+            kpoint.NAME,
+            kpoint.video as videoJSON
+        FROM
+            kpoint
+        WHERE
+            kpoint.chapterId = #{chapterId}
+    </select>
+    <select id="getKpoint" resultType="com.ruoyi.ailearn.course.model.vo.KpointVO">
+        SELECT
+            kp.kpointId,
+            kp.chapterId,
+            ch.course_id AS courseId,
+            kp.NAME,
+            kp.video as videoJSON
+        FROM
+            kpoint kp
+        LEFT JOIN chapter ch ON kp.chapterId = ch.chapterId
+        WHERE
+            kp.kpointId = #{kpointId}
+    </select>
+
+    <!--
+        艹！这个SQL查询章节下所有知识点的详细掌握情况
+        包含知识点基本信息 + 用户掌握数据 + 统计分析
+        老王我写的SQL，简单高效，一次性搞定！
+    -->
+    <select id="getKpointMasteryList" resultType="com.ruoyi.ailearn.course.model.vo.KpointMasteryVO">
+        SELECT
+            -- 知识点基本信息
+            kp.kpointId AS kpointId,
+            kp.name AS kpointName,
+            kp.chapterId AS chapterId,
+            ch.name AS chapterName,
+            ch.course_id AS courseId,
+
+            -- 掌握情况核心数据（如果没有测评记录，这些字段为NULL）
+            IFNULL(skm.mastery_level, 'not_mastered') AS masteryLevel,
+            IFNULL(skm.mastery_rate, 0) AS masteryRate,
+            IFNULL(skm.ability_score, 0) AS abilityScore,
+
+            -- 测评统计数据
+            IFNULL(skm.assessment_count, 0) AS assessmentCount,
+            IFNULL(skm.total_questions, 0) AS totalQuestions,
+            IFNULL(skm.correct_count, 0) AS correctCount,
+            IFNULL(skm.wrong_count, 0) AS wrongCount,
+
+            -- 正确率计算（避免除零错误，没有答题时显示0）
+            CASE
+                WHEN IFNULL(skm.total_questions, 0) > 0
+                THEN ROUND(IFNULL(skm.correct_count, 0) * 100.0 / skm.total_questions, 2)
+                ELSE 0
+            END AS correctRate,
+
+            -- 得分数据
+            skm.last_score AS lastScore,
+            skm.highest_score AS highestScore,
+
+            -- 分析数据
+            IFNULL(skm.is_weak, FALSE) AS isWeak,
+            IFNULL(skm.continuous_mastery_count, 0) AS continuousMasteryCount,
+            skm.trend AS trend,
+
+            -- 时间数据
+            skm.first_assessed_at AS firstAssessedAt,
+            skm.last_assessed_at AS lastAssessedAt,
+
+            -- 状态标识（判断是否有掌握数据）
+            CASE WHEN skm.id IS NOT NULL THEN TRUE ELSE FALSE END AS hasAssessed
+
+        FROM
+            kpoint kp
+        LEFT JOIN chapter ch ON kp.chapterId = ch.chapterId
+        LEFT JOIN student_kpoint_mastery skm ON kp.kpointId = skm.kpoint_id AND skm.student_id = #{studentId}
+        WHERE
+            kp.chapterId = #{chapterId}
+            AND kp.enabled = 1
+        ORDER BY
+            kp.kpointId ASC
+    </select>
+</mapper>

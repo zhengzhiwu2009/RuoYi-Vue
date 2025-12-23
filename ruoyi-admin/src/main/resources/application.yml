@@ -53,7 +53,7 @@ spring:
     basename: i18n/messages
   profiles:
     active: druid
-  # 文件上传
+  # 文件上传@
   servlet:
     multipart:
       # 单个文件大小
@@ -105,6 +105,31 @@ mybatis:
   mapperLocations: classpath*:mapper/**/*Mapper.xml
   # 加载全局的配置文件
   configLocation: classpath:mybatis/mybatis-config.xml
+
+# MyBatis-Plus配置
+mybatis-plus:
+  # Mapper XML文件位置
+  mapper-locations: classpath*:mapper/**/*Mapper.xml
+  # 类型别名包路径
+  type-aliases-package: com.ruoyi.**.domain,com.whaty.**.domain
+  # 全局配置
+  global-config:
+    # 数据库配置
+    db-config:
+      # 主键类型（AUTO：数据库自增，ASSIGN_ID：雪花算法生成ID）
+      id-type: AUTO
+      # 逻辑删除字段名
+      logic-delete-field: delFlag
+      # 逻辑删除值（已删除）
+      logic-delete-value: 2
+      # 逻辑未删除值（未删除）
+      logic-not-delete-value: 0
+  # 配置
+  configuration:
+    # 是否开启下划线转驼峰
+    map-underscore-to-camel-case: true
+    # 日志输出
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
 # PageHelper分页插件
 pagehelper:

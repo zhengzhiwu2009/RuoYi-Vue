@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilde
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.EnableAspectJAutoProxy;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 
 /**
  * 程序注解配置
@@ -20,11 +21,14 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
 public class ApplicationConfig
 {
     /**
-     * 时区配置
+     * 时区配置 + Long类型序列化为String（防止前端JS精度丢失）
      */
     @Bean
     public Jackson2ObjectMapperBuilderCustomizer jacksonObjectMapperCustomization()
     {
-        return jacksonObjectMapperBuilder -> jacksonObjectMapperBuilder.timeZone(TimeZone.getDefault());
+        return jacksonObjectMapperBuilder -> jacksonObjectMapperBuilder
+                .timeZone(TimeZone.getDefault())
+                .serializerByType(Long.class, ToStringSerializer.instance)
+                .serializerByType(Long.TYPE, ToStringSerializer.instance);
     }
 }
