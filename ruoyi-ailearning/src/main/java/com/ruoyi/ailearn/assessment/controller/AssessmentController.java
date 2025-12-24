@@ -11,6 +11,7 @@ import com.ruoyi.ailearn.assessment.dto.SubmitAnswerDTO;
 import com.ruoyi.ailearn.assessment.service.AssessmentService;
 import com.ruoyi.ailearn.assessment.vo.*;
 import com.ruoyi.common.core.domain.R;
+import com.ruoyi.common.utils.SecurityUtils;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -46,9 +47,9 @@ public class AssessmentController extends BaseController {
     @ApiOperation(value = "开始测评", notes = "创建测评记录并返回第一题（中等难度0.5）")
     public R<QuestionVO> startAssessment(
             @Validated @RequestBody StartAssessmentDTO dto) {
-
+        Long userId = SecurityUtils.getLoginUser().getUserId();
         log.info("开始测评 - 学生ID:{}, 测评类型:{}, 章节ID:{}, 知识点ID:{}",
-                dto.getStudentId(), dto.getAssessmentType(),
+            userId, dto.getAssessmentType(),
                 dto.getChapterId(), dto.getKpointId());
 
         try {
@@ -60,7 +61,7 @@ public class AssessmentController extends BaseController {
                 return R.fail(500,"知识点测评必须提供知识点ID");
             }
 
-            QuestionVO firstQuestion = assessmentService.startAssessment(dto);
+            QuestionVO firstQuestion = assessmentService.startAssessment(dto, userId);
             return R.ok(firstQuestion);
 
         } catch (Exception e) {
@@ -118,14 +119,11 @@ public class AssessmentController extends BaseController {
      * 查询学生测评历史
      * 分页查询学生的历史测评记录
      */
-    @GetMapping("/history/{studentId}")
+    @GetMapping("/history/{courseId}")
     @ApiOperation(value = "查询测评历史", notes = "分页查询学生的历史测评记录")
     public R<List<AssessmentReportVO>> getHistory(
-            @ApiParam(value = "学生ID", required = true)
-            @PathVariable Long studentId,
-
-            @ApiParam(value = "课程ID")
-            @RequestParam(required = false) Long courseId,
+            @ApiParam(value = "课程ID", required = true)
+            @PathVariable(value = "courseId") Long courseId,
 
             @ApiParam(value = "测评类型：1-章节测评，2-知识点测评")
             @RequestParam(required = false) Integer assessmentType,
@@ -135,6 +133,8 @@ public class AssessmentController extends BaseController {
 
             @ApiParam(value = "每页数量", defaultValue = "10")
             @RequestParam(defaultValue = "10") Integer size) {
+
+        Long studentId = SecurityUtils.getLoginUser().getUserId();
 
         log.info("查询测评历史 - 学生ID:{}, 课程ID:{}, 测评类型:{}, 页码:{}, 每页:{}",
                 studentId, courseId, assessmentType, page, size);
@@ -158,10 +158,10 @@ public class AssessmentController extends BaseController {
     @ApiOperation(value = "查询知识点掌握情况", notes = "查询学生在某个课程下所有知识点的掌握情况")
     public R<List<StudentKpointMasteryVO>> getKpointMastery(
             @ApiParam(value = "学生ID", required = true)
-            @PathVariable Long studentId,
+            @PathVariable(value = "studentId") Long studentId,
 
             @ApiParam(value = "课程ID", required = true)
-            @PathVariable Long courseId,
+            @PathVariable(value = "courseId") Long courseId,
 
             @ApiParam(value = "章节ID")
             @RequestParam(required = false) Long chapterId) {
@@ -184,17 +184,16 @@ public class AssessmentController extends BaseController {
      * 查询薄弱知识点
      * 查询学生的薄弱知识点列表
      */
-    @GetMapping("/weak-kpoints/{studentId}")
+    @GetMapping("/weak-kpoints/{courseId}")
     @ApiOperation(value = "查询薄弱知识点", notes = "查询学生的薄弱知识点列表，按掌握率升序排列")
     public R<List<StudentKpointMasteryVO>> getWeakKpoints(
-            @ApiParam(value = "学生ID", required = true)
-            @PathVariable Long studentId,
-
             @ApiParam(value = "课程ID")
-            @RequestParam(required = false) Long courseId,
+            @PathVariable(value = "courseId") Long courseId,
 
             @ApiParam(value = "返回数量", defaultValue = "10")
             @RequestParam(defaultValue = "10") Integer limit) {
+
+        Long studentId = SecurityUtils.getLoginUser().getUserId();
 
         log.info("查询薄弱知识点 - 学生ID:{}, 课程ID:{}, 返回数量:{}",
                 studentId, courseId, limit);

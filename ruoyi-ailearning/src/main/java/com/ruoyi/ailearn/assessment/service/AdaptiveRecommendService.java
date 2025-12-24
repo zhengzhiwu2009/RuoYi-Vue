@@ -45,12 +45,14 @@ public interface AdaptiveRecommendService {
     /**
      * 判断是否可以终止测评
      *
+     * @param assessmentType 测评类型：1-章节测评，2-知识点测评
      * @param currentCount   当前已答题数
      * @param abilityResult  能力计算结果
      * @param history        答题历史
      * @return true-可以终止，false-继续测评
      */
-    boolean canTerminate(int currentCount,
+    boolean canTerminate(Integer assessmentType,
+                        int currentCount,
                         AbilityResult abilityResult,
                         List<AnswerDetail> history);
 }

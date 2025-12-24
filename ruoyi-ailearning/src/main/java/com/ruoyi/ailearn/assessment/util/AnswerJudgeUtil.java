@@ -1,5 +1,8 @@
 package com.ruoyi.ailearn.assessment.util;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import lombok.Data;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
@@ -8,6 +11,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 答案判断工具类
@@ -24,6 +29,114 @@ import java.util.List;
 public class AnswerJudgeUtil {
 
     /**
+     * 数学公式标签的正则（艹，这个SB标签得用正则扒内容）
+     * 匹配 <span class="math">xxx</span> 中的 xxx
+     */
+    private static final Pattern MATH_SPAN_PATTERN = Pattern.compile(
+            "<span\\s+class\\s*=\\s*[\"']math[\"']\\s*>(.*?)</span>",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+    );
+
+    /**
+     * 从JSON格式的正确答案中提取答案内容
+     *
+     * 输入格式示例：
+     * [{"isCorrect":false,"answer":"<span class=\"math\">104999</span>","userAnswer":"C","hasMathFormular":true},
+     *  {"isCorrect":false,"answer":"<span class=\"math\">95000</span>","userAnswer":"","hasMathFormular":true}]
+     *
+     * 输出：104999;95000
+     *
+     * @param jsonAnswer JSON格式的答案字符串
+     * @return 提取后的答案，多个用分号分隔
+     */
+    public static String extractAnswerFromJson(String jsonAnswer) {
+        if (jsonAnswer == null || jsonAnswer.trim().isEmpty()) {
+            log.warn("JSON答案为空，这是要闹哪样？");
+            return "";
+        }
+
+        try {
+            JSONArray answerArray = JSON.parseArray(jsonAnswer);
+            if (answerArray == null || answerArray.isEmpty()) {
+                log.warn("JSON答案解析为空数组 - input:{}", jsonAnswer);
+                return "";
+            }
+
+            List<String> answers = new ArrayList<>();
+
+            for (int i = 0; i < answerArray.size(); i++) {
+                JSONObject item = answerArray.getJSONObject(i);
+                String answer = item.getString("answer");
+                Boolean hasMathFormular = item.getBoolean("hasMathFormular");
+
+                if (answer == null) {
+                    log.warn("第{}个答案项的answer属性为空，这SB数据是怎么来的？", i + 1);
+                    answers.add("");
+                    continue;
+                }
+
+                // 如果是数学公式，需要从<span class="math">xxx</span>中提取内容
+                if (Boolean.TRUE.equals(hasMathFormular)) {
+                    String extractedAnswer = extractMathContent(answer);
+                    answers.add(extractedAnswer);
+                    log.debug("数学公式答案提取 - 原始:{} → 提取:{}", answer, extractedAnswer);
+                } else {
+                    // 非数学公式，直接使用原答案（去除HTML标签）
+                    String cleanAnswer = stripHtmlTags(answer);
+                    answers.add(cleanAnswer);
+                    log.debug("普通答案提取 - 原始:{} → 清理:{}", answer, cleanAnswer);
+                }
+            }
+
+            String result = String.join(";", answers);
+            log.info("JSON答案提取完成 - 共{}个答案 → {}", answers.size(), result);
+            return result;
+
+        } catch (Exception e) {
+            log.error("艹！JSON答案解析失败 - input:{}, error:{}", jsonAnswer, e.getMessage(), e);
+            return "";
+        }
+    }
+
+    /**
+     * 从数学公式标签中提取内容
+     * 例如：<span class="math">104999</span> → 104999
+     */
+    private static String extractMathContent(String input) {
+        if (input == null) {
+            return "";
+        }
+
+        Matcher matcher = MATH_SPAN_PATTERN.matcher(input);
+        StringBuilder result = new StringBuilder();
+
+        while (matcher.find()) {
+            if (result.length() > 0) {
+                result.append(" ");
+            }
+            result.append(matcher.group(1).trim());
+        }
+
+        // 如果没匹配到数学公式标签，返回去除HTML后的原文
+        if (result.length() == 0) {
+            log.debug("未匹配到数学公式标签，直接清理HTML - input:{}", input);
+            return stripHtmlTags(input);
+        }
+
+        return result.toString();
+    }
+
+    /**
+     * 去除HTML标签（保底方案，防止憨批数据）
+     */
+    private static String stripHtmlTags(String input) {
+        if (input == null) {
+            return "";
+        }
+        return input.replaceAll("<[^>]*>", "").trim();
+    }
+
+    /**
      * 判断答案是否正确
      *
      * @param questionType   题目类型：0-选择题，1-填空题
@@ -37,6 +150,8 @@ public class AnswerJudgeUtil {
             log.warn("答案为空 - 学生答案:{}, 正确答案:{}", studentAnswer, correctAnswer);
             return JudgeResult.allWrong();
         }
+        // 从JSON中提取答案
+        correctAnswer = extractAnswerFromJson(correctAnswer);
 
         // 根据题型判断
         if (questionType == null || questionType == 0) {
@@ -143,7 +258,7 @@ public class AnswerJudgeUtil {
             return "";
         }
         // 去除所有空白字符（空格、制表符、换行符等），转小写
-        return text.replaceAll("\\s+", "").toLowerCase();
+        return text.replaceAll("\\s+", "").toUpperCase();
     }
 
     /**

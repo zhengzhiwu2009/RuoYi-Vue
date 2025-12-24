@@ -78,16 +78,19 @@ public class AssessmentServiceImpl implements AssessmentService {
     @Autowired
     private IRTAbilityCalculator irtAbilityCalculator;
 
+    @Autowired
+    private com.ruoyi.ailearn.assessment.config.AssessmentConfig assessmentConfig;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public QuestionVO startAssessment(StartAssessmentDTO dto) {
+    public QuestionVO startAssessment(StartAssessmentDTO dto, Long userId) {
         log.info("开始测评 - 学生ID:{}, 测评类型:{}, 章节ID:{}, 知识点ID:{}",
-                dto.getStudentId(), dto.getAssessmentType(),
+            userId, dto.getAssessmentType(),
                 dto.getChapterId(), dto.getKpointId());
 
         // 1. 创建测评记录
         AssessmentRecord record = new AssessmentRecord()
-                .setStudentId(dto.getStudentId())
+                .setStudentId(userId)
                 .setCourseId(dto.getCourseId())
                 .setAssessmentType(dto.getAssessmentType())
                 .setChapterId(dto.getChapterId())
@@ -111,8 +114,8 @@ public class AssessmentServiceImpl implements AssessmentService {
                 dto.getKpointId()
         );
 
-        // 3. 转换为VO返回
-        QuestionVO questionVO = convertToQuestionVO(firstQuestion, 1, record.getId());
+        // 3. 转换为VO返回（传入测评类型，用于显示正确的题数范围）
+        QuestionVO questionVO = convertToQuestionVO(firstQuestion, 1, record.getId(), dto.getAssessmentType());
 
         log.info("返回第1题 - 题目ID:{}, 难度:{}", firstQuestion.getId(), firstQuestion.getDifficulty());
 
@@ -136,9 +139,12 @@ public class AssessmentServiceImpl implements AssessmentService {
         AnswerJudgeUtil.JudgeResult judgeResult = AnswerJudgeUtil.judgeAnswer(
                 question.getType(),
                 dto.getStudentAnswer(),
-                question.getAnswerStr()
+                question.getAnswerItems()
         );
 
+        // 3. 更新题目的答案
+        question.setAnswerStr(judgeResult.getNormalizedCorrectAnswer());
+        questionMapper.updateById( question);
         log.info("判断答案 - 题目ID:{}, 题型:{}, 学生答案:{}, 正确答案:{}, 判断结果:{}, 部分得分:{}, 正确数:{}/{}",
                 dto.getQuestionId(), question.getType(),
                 dto.getStudentAnswer(), question.getAnswerStr(),
@@ -149,12 +155,29 @@ public class AssessmentServiceImpl implements AssessmentService {
         Integer standardTime = question.getAvgTime() != null ? question.getAvgTime() : 90;
         BigDecimal speedScore = calculateSpeedScore(dto.getTimeSpent(), standardTime);
 
-        // 4. 保存答题详情（包含部分得分信息）
+        // 4. 获取知识点ID和名称（艹，question表的kpointName可能为空，必须从kpoint表获取！）
+        Long actualKpointId = question.getKpointId() != null ? question.getKpointId() : question.getKpId();
+        String kpointName = question.getKpointName();
+        if (kpointName == null || kpointName.isEmpty()) {
+            // question表中kpointName为空，从kpoint表获取
+            if (actualKpointId != null) {
+                Kpoint kpoint = kpointMapper.selectOne(
+                        new LambdaQueryWrapper<Kpoint>()
+                                .eq(Kpoint::getKpointId, actualKpointId)
+                );
+                if (kpoint != null) {
+                    kpointName = kpoint.getName();
+                    log.debug("从kpoint表获取知识点名称 - kpointId:{}, name:{}", actualKpointId, kpointName);
+                }
+            }
+        }
+
+        // 5. 保存答题详情（包含部分得分信息）
         AnswerDetail detail = new AnswerDetail()
                 .setAssessmentId(dto.getAssessmentId())
                 .setQuestionId(dto.getQuestionId())
-                .setKpointId(question.getKpointId())
-                .setKpointName(question.getKpointName())
+                .setKpointId(actualKpointId)
+                .setKpointName(kpointName)
                 .setSequence(dto.getSequence())
                 .setDifficulty(question.getDifficulty())
                 .setDiscrimination(question.getDiscrimination())
@@ -192,12 +215,13 @@ public class AssessmentServiceImpl implements AssessmentService {
         BigDecimal currentAccuracy = BigDecimal.valueOf((double) correctCount / history.size())
                 .setScale(4, RoundingMode.HALF_UP);
 
-        // 8. 判断是否终止测评
+        // 8. 判断是否终止测评（根据测评类型使用不同的题数配置）
         AssessmentRecord record = assessmentRecordMapper.selectById(dto.getAssessmentId());
         boolean shouldFinish = adaptiveRecommendService.canTerminate(
-                history.size(), ability, history);
+                record.getAssessmentType(), history.size(), ability, history);
 
-        log.info("判断终止条件 - 已答题数:{}, 是否终止:{}", history.size(), shouldFinish);
+        log.info("判断终止条件 - 测评类型:{}, 已答题数:{}, 是否终止:{}",
+                record.getAssessmentType() == 2 ? "知识点" : "章节", history.size(), shouldFinish);
 
         // 9. 构建响应
         AnswerFeedbackVO feedback = new AnswerFeedbackVO()
@@ -225,7 +249,7 @@ public class AssessmentServiceImpl implements AssessmentService {
                     history,
                     ability
             );
-            feedback.setNextQuestion(convertToQuestionVO(nextQuestion, history.size() + 1, dto.getAssessmentId()));
+            feedback.setNextQuestion(convertToQuestionVO(nextQuestion, history.size() + 1, dto.getAssessmentId(), record.getAssessmentType()));
         }
 
         return feedback;
@@ -319,10 +343,12 @@ public class AssessmentServiceImpl implements AssessmentService {
                         .setMasteryLevelText(getMasteryLevelText(detail.getMasteryLevel()))
                         .setIsWeak(detail.getIsWeak());
 
-                if (Boolean.TRUE.equals(detail.getIsWeak())) {
-                    weakKpoints.add(kp);
-                } else if ("proficient".equals(detail.getMasteryLevel())) {
+                if ("proficient".equals(detail.getMasteryLevel())) {
+                    // 掌握的知识点
                     masteredKpoints.add(kp);
+                } else {
+                    // 薄弱的知识点
+                    weakKpoints.add(kp);
                 }
             }
         } else {
@@ -593,12 +619,24 @@ public class AssessmentServiceImpl implements AssessmentService {
                 isWeak = true;
             }
 
+            // 获取知识点名称（优先从AnswerDetail获取，为空则从kpoint表获取）
+            String kpointName = kpAnswers.get(0).getKpointName();
+            if (kpointName == null || kpointName.isEmpty()) {
+                Kpoint kpoint = kpointMapper.selectOne(
+                        new LambdaQueryWrapper<Kpoint>()
+                                .eq(Kpoint::getKpointId, kpointId)
+                );
+                if (kpoint != null) {
+                    kpointName = kpoint.getName();
+                }
+            }
+
             // 插入记录
             ChapterAssessmentKpoint cak = new ChapterAssessmentKpoint()
                     .setAssessmentId(assessmentId)
                     .setChapterId(chapterId)
                     .setKpointId(kpointId)
-                    .setKpointName(kpAnswers.get(0).getKpointName())
+                    .setKpointName(kpointName)
                     .setQuestionCount(totalCount)
                     .setCorrectCount(correctCount)
                     .setWrongCount(wrongCount)
@@ -644,12 +682,14 @@ public class AssessmentServiceImpl implements AssessmentService {
                             .eq(StudentKpointMastery::getKpointId, kpointId)
             );
 
-            // 获取章节ID
+            // 获取章节ID和知识点名称（直接从kpoint表获取，更可靠！）
             Kpoint kpoint = kpointMapper.selectOne(
                     new LambdaQueryWrapper<Kpoint>()
                             .eq(Kpoint::getKpointId, kpointId)
             );
             Long chapterId = kpoint != null ? kpoint.getChapterId() : null;
+            // 知识点名称优先从kpoint表获取，fallback到AnswerDetail
+            String kpointNameForMastery = kpoint != null ? kpoint.getName() : kpAnswers.get(0).getKpointName();
 
             if (existing == null) {
                 // ========== 首次测评该知识点 ==========
@@ -665,7 +705,7 @@ public class AssessmentServiceImpl implements AssessmentService {
                         .setCourseId(assessment.getCourseId())
                         .setChapterId(chapterId)
                         .setKpointId(kpointId)
-                        .setKpointName(kpAnswers.get(0).getKpointName())
+                        .setKpointName(kpointNameForMastery)
                         .setMasteryLevel(masteryLevel)
                         .setMasteryRate(BigDecimal.valueOf(currentAccuracy).setScale(4, RoundingMode.HALF_UP))
                         .setAbilityScore(assessment.getAbilityScore())
@@ -911,9 +951,14 @@ public class AssessmentServiceImpl implements AssessmentService {
     }
 
     /**
-     * 转换为QuestionVO
+     * 转换为QuestionVO（艹，必须从kpoint表获取知识点名称，question表可能为空！）
+     *
+     * @param question       题目
+     * @param sequence       题目序号
+     * @param assessmentId   测评ID
+     * @param assessmentType 测评类型：1-章节测评，2-知识点测评
      */
-    private QuestionVO convertToQuestionVO(Question question, int sequence, Long assessmentId) {
+    private QuestionVO convertToQuestionVO(Question question, int sequence, Long assessmentId, Integer assessmentType) {
         QuestionVO vo = new QuestionVO();
         vo.setQuestionId(question.getId());
         vo.setSequence(sequence);
@@ -922,9 +967,29 @@ public class AssessmentServiceImpl implements AssessmentService {
         vo.setOptions(question.getOptions());
         vo.setDifficulty(question.getDifficulty());
         vo.setStandardTime(question.getAvgTime() != null ? question.getAvgTime() : 90);
-        vo.setProgress("第" + sequence + "题/共6-10题");
-        vo.setKpointId(question.getKpointId());
-        vo.setKpointName(question.getKpointName());
+
+        // 根据测评类型获取题数范围（艹，终于可配置了！）
+        int minQuestions = assessmentConfig.getMinQuestions(assessmentType);
+        int maxQuestions = assessmentConfig.getMaxQuestions(assessmentType);
+        vo.setProgress("第" + sequence + "题/共" + minQuestions + "-" + maxQuestions + "题");
+
+        // 获取知识点ID和名称（兼容kpId和kpointId两个字段）
+        Long actualKpointId = question.getKpointId() != null ? question.getKpointId() : question.getKpId();
+        String kpointName = question.getKpointName();
+        if (kpointName == null || kpointName.isEmpty()) {
+            // question表中kpointName为空，从kpoint表获取
+            if (actualKpointId != null) {
+                Kpoint kpoint = kpointMapper.selectOne(
+                        new LambdaQueryWrapper<Kpoint>()
+                                .eq(Kpoint::getKpointId, actualKpointId)
+                );
+                if (kpoint != null) {
+                    kpointName = kpoint.getName();
+                }
+            }
+        }
+        vo.setKpointId(actualKpointId);
+        vo.setKpointName(kpointName);
         vo.setAssessmentId(assessmentId);
         return vo;
     }

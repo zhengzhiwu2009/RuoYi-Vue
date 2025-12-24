@@ -77,7 +77,7 @@ public class AssessmentReportVO {
     private Integer finalScore;
 
     // ========== 知识点表现 ==========
-    @ApiModelProperty(value = "薄弱知识点列表")
+    @ApiModelProperty(value = "薄弱知识点列表（包括基本掌握的）")
     private List<KpointPerformanceVO> weakKpoints;
 
     @ApiModelProperty(value = "已掌握知识点列表")

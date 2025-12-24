@@ -159,3 +159,28 @@ xss:
   excludes: /system/notice
   # 匹配链接
   urlPatterns: /system/*,/monitor/*,/tool/*
+
+# AI自适应测评配置
+assessment:
+  # 知识点测评配置
+  kpoint:
+    # 最少题数
+    min-questions: 3
+    # 最多题数
+    max-questions: 5
+  # 章节测评配置
+  chapter:
+    # 最少题数
+    min-questions: 6
+    # 最多题数
+    max-questions: 10
+  # 终止条件配置
+  terminate:
+    # 信心水平阈值（达到此值且区间足够窄时终止）
+    confidence-threshold: 0.85
+    # 区间宽度阈值
+    interval-width-threshold: 0.2
+    # 基本满足条件的信心水平
+    basic-confidence-threshold: 0.75
+    # 基本满足条件的区间宽度
+    basic-interval-width-threshold: 0.25

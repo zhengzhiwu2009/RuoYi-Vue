@@ -26,7 +26,7 @@ public interface AssessmentService {
      * @param dto 开始测评请求
      * @return 第一题
      */
-    QuestionVO startAssessment(StartAssessmentDTO dto);
+    QuestionVO startAssessment(StartAssessmentDTO dto, Long userId);
 
     /**
      * 提交答案 - 保存答题详情并返回反馈（含下一题或报告）

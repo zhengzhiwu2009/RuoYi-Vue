@@ -16,10 +16,6 @@ import javax.validation.constraints.NotNull;
 @ApiModel(value = "开始测评请求", description = "用户开始测评时提交的参数")
 public class StartAssessmentDTO {
 
-    @ApiModelProperty(value = "学生ID", required = true)
-    @NotNull(message = "学生ID不能为空")
-    private Long studentId;
-
     @ApiModelProperty(value = "课程ID", required = true)
     @NotNull(message = "课程ID不能为空")
     private Long courseId;

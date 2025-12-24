@@ -1,6 +1,7 @@
 package com.ruoyi.ailearn.assessment.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ruoyi.ailearn.assessment.config.AssessmentConfig;
 import com.ruoyi.ailearn.assessment.domain.AnswerDetail;
 import com.ruoyi.ailearn.assessment.service.AdaptiveRecommendService;
 import com.ruoyi.ailearn.assessment.util.AbilityResult;
@@ -24,6 +25,7 @@ import java.util.stream.Collectors;
  * @date 2025-12-17
  *
  * 艹，这是核心算法实现！6个阶段的自适应出题策略！
+ * 题目数量可配置：知识点测评默认3-5题，章节测评默认6-10题
  */
 @Slf4j
 @Service
@@ -35,25 +37,8 @@ public class AdaptiveRecommendServiceImpl implements AdaptiveRecommendService {
     @Autowired
     private KpointMapper kpointMapper;
 
-    /**
-     * 最少题数
-     */
-    private static final int MIN_QUESTIONS = 6;
-
-    /**
-     * 最多题数
-     */
-    private static final int MAX_QUESTIONS = 10;
-
-    /**
-     * 信心水平阈值
-     */
-    private static final double CONFIDENCE_THRESHOLD = 0.85;
-
-    /**
-     * 区间宽度阈值
-     */
-    private static final double INTERVAL_WIDTH_THRESHOLD = 0.2;
+    @Autowired
+    private AssessmentConfig assessmentConfig;
 
     @Override
     public Question selectFirstQuestion(Integer assessmentType, Long chapterId, Long kpointId) {
@@ -65,17 +50,22 @@ public class AdaptiveRecommendServiceImpl implements AdaptiveRecommendService {
 
         LambdaQueryWrapper<Question> wrapper = new LambdaQueryWrapper<>();
 
-        // 1. 知识点范围
+        // 1. 知识点范围（艹，question表有两个知识点字段kpId和kpointId，必须同时匹配！）
         if (assessmentType == 2) {
-            // 知识点测评：只从该知识点选题
-            wrapper.eq(Question::getKpointId, kpointId);
+            // 知识点测评：只从该知识点选题（兼容kpId和kpointId两个字段）
+            wrapper.and(w -> w.eq(Question::getKpointId, kpointId)
+                              .or()
+                              .eq(Question::getKpId, kpointId));
         } else {
             // 章节测评：从章节下所有知识点选题
             List<Long> kpointIds = getKpointIdsByChapter(chapterId);
             if (kpointIds.isEmpty()) {
                 throw new RuntimeException("该章节下没有知识点");
             }
-            wrapper.in(Question::getKpointId, kpointIds);
+            // 兼容kpId和kpointId两个字段
+            wrapper.and(w -> w.in(Question::getKpointId, kpointIds)
+                              .or()
+                              .in(Question::getKpId, kpointIds));
         }
 
         // 2. 难度匹配（中等难度）
@@ -96,11 +86,16 @@ public class AdaptiveRecommendServiceImpl implements AdaptiveRecommendService {
             log.warn("未找到符合条件的第1题，放宽条件重试");
             wrapper.clear();
 
+            // 兼容kpId和kpointId两个字段
             if (assessmentType == 2) {
-                wrapper.eq(Question::getKpointId, kpointId);
+                wrapper.and(w -> w.eq(Question::getKpointId, kpointId)
+                                  .or()
+                                  .eq(Question::getKpId, kpointId));
             } else {
                 List<Long> kpointIds = getKpointIdsByChapter(chapterId);
-                wrapper.in(Question::getKpointId, kpointIds);
+                wrapper.and(w -> w.in(Question::getKpointId, kpointIds)
+                                  .or()
+                                  .in(Question::getKpId, kpointIds));
             }
 
             wrapper.between(Question::getDifficulty, 0.3, 0.7)
@@ -260,8 +255,10 @@ public class AdaptiveRecommendServiceImpl implements AdaptiveRecommendService {
                                      int limit) {
         LambdaQueryWrapper<Question> wrapper = new LambdaQueryWrapper<>();
 
-        // 知识点范围
-        wrapper.in(Question::getKpointId, kpointIds);
+        // 知识点范围（兼容kpId和kpointId两个字段，这两个SB字段必须都匹配！）
+        wrapper.and(w -> w.in(Question::getKpointId, kpointIds)
+                          .or()
+                          .in(Question::getKpId, kpointIds));
 
         // 难度范围
         double minDiff = Math.max(0.0, targetDifficulty - diffRange);
@@ -299,8 +296,10 @@ public class AdaptiveRecommendServiceImpl implements AdaptiveRecommendService {
                                               int limit) {
         LambdaQueryWrapper<Question> wrapper = new LambdaQueryWrapper<>();
 
-        // 知识点范围
-        wrapper.in(Question::getKpointId, kpointIds);
+        // 知识点范围（兼容kpId和kpointId两个字段）
+        wrapper.and(w -> w.in(Question::getKpointId, kpointIds)
+                          .or()
+                          .in(Question::getKpId, kpointIds));
 
         // 去重
         if (answeredIds != null && !answeredIds.isEmpty()) {
@@ -328,8 +327,10 @@ public class AdaptiveRecommendServiceImpl implements AdaptiveRecommendService {
                                         int limit) {
         LambdaQueryWrapper<Question> wrapper = new LambdaQueryWrapper<>();
 
-        // 知识点范围
-        wrapper.in(Question::getKpointId, kpointIds);
+        // 知识点范围（兼容kpId和kpointId两个字段）
+        wrapper.and(w -> w.in(Question::getKpointId, kpointIds)
+                          .or()
+                          .in(Question::getKpId, kpointIds));
 
         // 去重（可选）
         if (answeredIds != null && !answeredIds.isEmpty()) {
@@ -363,19 +364,31 @@ public class AdaptiveRecommendServiceImpl implements AdaptiveRecommendService {
     }
 
     @Override
-    public boolean canTerminate(int currentCount,
+    public boolean canTerminate(Integer assessmentType,
+                                int currentCount,
                                 AbilityResult abilityResult,
                                 List<AnswerDetail> history) {
 
+        // 从配置类获取题数限制（艹，终于可配置了！）
+        int minQuestions = assessmentConfig.getMinQuestions(assessmentType);
+        int maxQuestions = assessmentConfig.getMaxQuestions(assessmentType);
+        double confidenceThreshold = assessmentConfig.getTerminate().getConfidenceThreshold();
+        double intervalWidthThreshold = assessmentConfig.getTerminate().getIntervalWidthThreshold();
+        double basicConfidence = assessmentConfig.getTerminate().getBasicConfidenceThreshold();
+        double basicIntervalWidth = assessmentConfig.getTerminate().getBasicIntervalWidthThreshold();
+
+        String typeDesc = assessmentType == 2 ? "知识点测评" : "章节测评";
+        log.debug("终止条件判断 - {}，当前题数:{}，配置范围:{}-{}", typeDesc, currentCount, minQuestions, maxQuestions);
+
         // 条件1：强制上限
-        if (currentCount >= MAX_QUESTIONS) {
-            log.info("达到最大题数{}，终止测评", MAX_QUESTIONS);
+        if (currentCount >= maxQuestions) {
+            log.info("{}达到最大题数{}，终止测评", typeDesc, maxQuestions);
             return true;
         }
 
         // 条件2：最少题数未满足
-        if (currentCount < MIN_QUESTIONS) {
-            log.debug("未达到最少题数{}，继续测评", MIN_QUESTIONS);
+        if (currentCount < minQuestions) {
+            log.debug("{}未达到最少题数{}，继续测评", typeDesc, minQuestions);
             return false;
         }
 
@@ -383,21 +396,23 @@ public class AdaptiveRecommendServiceImpl implements AdaptiveRecommendService {
         double confidence = abilityResult.getConfidence().doubleValue();
         double intervalWidth = abilityResult.getIntervalWidth().doubleValue();
 
-        if (confidence >= CONFIDENCE_THRESHOLD && intervalWidth <= INTERVAL_WIDTH_THRESHOLD) {
+        if (confidence >= confidenceThreshold && intervalWidth <= intervalWidthThreshold) {
             log.info("高信心({})且区间窄({})，终止测评", confidence, intervalWidth);
             return true;
         }
 
         // 条件4：基本满足要求
-        if (currentCount >= MIN_QUESTIONS &&
-                confidence >= 0.75 &&
-                intervalWidth <= 0.25) {
-            log.info("基本满足要求(信心:{}, 区间:{}，终止测评", confidence, intervalWidth);
+        if (currentCount >= minQuestions &&
+                confidence >= basicConfidence &&
+                intervalWidth <= basicIntervalWidth) {
+            log.info("基本满足要求(信心:{}, 区间:{})，终止测评", confidence, intervalWidth);
             return true;
         }
 
         // 条件5：连续3题难度相近且答题表现一致（能力稳定）
-        if (currentCount >= 6) {
+        // 知识点测评至少需要3题，章节测评至少需要4题才检查这个条件
+        int stableCheckThreshold = assessmentType == 2 ? 3 : 4;
+        if (currentCount >= stableCheckThreshold && history.size() >= 3) {
             List<AnswerDetail> recent3 = history.subList(history.size() - 3, history.size());
 
             // 检查难度是否相近
