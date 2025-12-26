@@ -967,6 +967,7 @@ public class AssessmentServiceImpl implements AssessmentService {
         vo.setOptions(question.getOptions());
         vo.setDifficulty(question.getDifficulty());
         vo.setStandardTime(question.getAvgTime() != null ? question.getAvgTime() : 90);
+        vo.setAnswerItems(question.getAnswerItems());
 
         // 根据测评类型获取题数范围（艹，终于可配置了！）
         int minQuestions = assessmentConfig.getMinQuestions(assessmentType);

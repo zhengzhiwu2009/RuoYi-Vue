@@ -27,6 +27,9 @@ public class QuestionVO {
     @ApiModelProperty(value = "题目内容")
     private String problem;
 
+    @ApiModelProperty(value = "答案(调试期结束后删除)")
+    private String answerItems;
+
     @ApiModelProperty(value = "题目类型：1-单选，2-多选，3-判断，4-填空")
     private Integer type;
 

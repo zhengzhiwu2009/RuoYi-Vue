@@ -37,6 +37,7 @@
             kp.kpointId AS kpointId,
             kp.name AS kpointName,
             kp.chapterId AS chapterId,
+            kp.video AS videoJSON,
             ch.name AS chapterName,
             ch.course_id AS courseId,
 

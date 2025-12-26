@@ -1,9 +1,12 @@
 package com.ruoyi.ailearn.course.model.vo;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.TypeReference;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -27,6 +30,29 @@ public class KpointMasteryVO {
 
     @ApiModelProperty(value = "知识点名称")
     private String kpointName;
+
+    @ApiModelProperty(value = "视频")
+    private VideoItem video;
+
+    public VideoItem getVideo() {
+        if (StringUtils.hasText(this.getVideoJSON())) {
+            try {
+                VideoItem videoItem = JSON.parseObject(
+                    this.getVideoJSON(),
+                    new TypeReference<VideoItem>() {}
+                );
+                this.setVideo(videoItem);
+            } catch (Exception e) {
+                this.setVideo(null);
+            }
+        } else {
+            this.setVideo(null);
+        }
+        return video;
+    }
+
+    @ApiModelProperty(hidden = true)
+    private String videoJSON; // 原始 JSON 字符串，不暴露给前端
 
     @ApiModelProperty(value = "章节ID")
     private Long chapterId;
