@@ -90,4 +90,15 @@ public interface AssessmentService {
      * @param assessmentId 测评记录ID
      */
     void abandonAssessment(Long assessmentId);
+
+    /**
+     * 获取历史趋势数据
+     * 用于前端绘制进步曲线图
+     *
+     * @param studentId 学生ID
+     * @param chapterId 章节ID
+     * @param limit     返回记录数（默认6条）
+     * @return 历史趋势数据列表
+     */
+    List<HistoryTrendVO> getHistoryTrend(Long studentId, Long chapterId, Integer limit);
 }

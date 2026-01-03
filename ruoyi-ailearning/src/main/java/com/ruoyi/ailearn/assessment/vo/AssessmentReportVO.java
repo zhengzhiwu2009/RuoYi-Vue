@@ -60,6 +60,9 @@ public class AssessmentReportVO {
     @ApiModelProperty(value = "最慢答题时间（秒）")
     private Integer maxTime;
 
+    @ApiModelProperty(value = "该单元所有用户平均测评总用时（秒）")
+    private Integer avgTimeStandard;
+
     // ========== 掌握程度评定 ==========
     @ApiModelProperty(value = "能力估计值（0.00-1.00）")
     private BigDecimal abilityScore;
@@ -103,6 +106,28 @@ public class AssessmentReportVO {
 
     @ApiModelProperty(value = "上次测评时间")
     private LocalDateTime lastAssessedAt;
+
+    @ApiModelProperty(value = "上次正确率（0.00-1.00）")
+    private BigDecimal lastAccuracy;
+
+    @ApiModelProperty(value = "正确率变化")
+    private BigDecimal accuracyChange;
+
+    @ApiModelProperty(value = "上次能力值（0.00-1.00）")
+    private BigDecimal lastAbilityScore;
+
+    @ApiModelProperty(value = "能力值变化")
+    private BigDecimal abilityChange;
+
+    @ApiModelProperty(value = "上次信心水平（0.00-1.00）")
+    private BigDecimal lastConfidenceLevel;
+
+    @ApiModelProperty(value = "信心水平变化")
+    private BigDecimal confidenceChange;
+
+    // ========== 排名信息 ==========
+    @ApiModelProperty(value = "排名信息")
+    private RankingInfoVO rankingInfo;
 
     // ========== 答题详情 ==========
     @ApiModelProperty(value = "答题详情列表")

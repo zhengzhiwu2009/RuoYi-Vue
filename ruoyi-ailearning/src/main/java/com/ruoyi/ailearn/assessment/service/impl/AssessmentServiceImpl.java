@@ -395,11 +395,36 @@ public class AssessmentServiceImpl implements AssessmentService {
             report.setLastScore(lastRecord.getFinalScore());
             report.setScoreChange(record.getFinalScore() - lastRecord.getFinalScore());
             report.setLastAssessedAt(lastRecord.getCompletedAt());
+            // 新增历史对比字段
+            report.setLastAccuracy(lastRecord.getAccuracy());
+            report.setAccuracyChange(record.getAccuracy().subtract(lastRecord.getAccuracy()));
+            report.setLastAbilityScore(lastRecord.getAbilityScore());
+            report.setAbilityChange(record.getAbilityScore().subtract(lastRecord.getAbilityScore()));
+            report.setLastConfidenceLevel(lastRecord.getConfidenceLevel());
+            report.setConfidenceChange(record.getConfidenceLevel().subtract(lastRecord.getConfidenceLevel()));
         } else {
             report.setHasHistory(false);
         }
 
-        // 11. 答题详情
+        // 11. 计算该单元所有用户平均测评用时（avgTimeStandard）
+        Integer avgTimeStandard = calculateAvgTimeStandard(
+                record.getAssessmentType(),
+                record.getChapterId(),
+                record.getKpointId()
+        );
+        report.setAvgTimeStandard(avgTimeStandard);
+
+        // 12. 排名信息
+        RankingInfoVO rankingInfo = calculateRankingInfo(
+                record.getStudentId(),
+                record.getAssessmentType(),
+                record.getChapterId(),
+                record.getKpointId(),
+                record.getFinalScore()
+        );
+        report.setRankingInfo(rankingInfo);
+
+        // 13. 答题详情
         List<AnswerDetailVO> answerDetailVOs = answers.stream()
                 .map(this::convertToAnswerDetailVO)
                 .collect(Collectors.toList());
@@ -1044,5 +1069,174 @@ public class AssessmentServiceImpl implements AssessmentService {
             return "退步";
         }
         return "未知";
+    }
+
+    /**
+     * 计算该单元所有用户平均测评总用时
+     * 艹，这个方法用来计算同一单元所有用户的平均总用时，用于对比参考！
+     * 注意：是总用时的平均，不是单题用时的平均！
+     */
+    private Integer calculateAvgTimeStandard(Integer assessmentType, Long chapterId, Long kpointId) {
+        LambdaQueryWrapper<AssessmentRecord> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(AssessmentRecord::getAssessmentType, assessmentType)
+                .eq(AssessmentRecord::getStatus, 1);  // 只统计已完成的
+
+        if (assessmentType == 1 && chapterId != null) {
+            wrapper.eq(AssessmentRecord::getChapterId, chapterId);
+        } else if (assessmentType == 2 && kpointId != null) {
+            wrapper.eq(AssessmentRecord::getKpointId, kpointId);
+        }
+
+        List<AssessmentRecord> records = assessmentRecordMapper.selectList(wrapper);
+
+        if (records.isEmpty()) {
+            return null;  // 没有数据时返回null
+        }
+
+        // 计算平均总用时（不是单题用时！）
+        double avgTotalTime = records.stream()
+                .filter(r -> r.getTotalTime() != null && r.getTotalTime() > 0)
+                .mapToInt(AssessmentRecord::getTotalTime)
+                .average()
+                .orElse(0.0);
+
+        return avgTotalTime > 0 ? (int) Math.round(avgTotalTime) : null;
+    }
+
+    /**
+     * 计算排名信息
+     * 艹，这个方法用来计算学生在同年级和系统范围内的排名！
+     * 同年级定义：同一学年（9月到次年6月）
+     */
+    private RankingInfoVO calculateRankingInfo(Long studentId, Integer assessmentType,
+                                                Long chapterId, Long kpointId, Integer score) {
+        RankingInfoVO rankingInfo = new RankingInfoVO();
+
+        // 构建查询条件
+        LambdaQueryWrapper<AssessmentRecord> baseWrapper = new LambdaQueryWrapper<>();
+        baseWrapper.eq(AssessmentRecord::getAssessmentType, assessmentType)
+                .eq(AssessmentRecord::getStatus, 1);
+
+        if (assessmentType == 1 && chapterId != null) {
+            baseWrapper.eq(AssessmentRecord::getChapterId, chapterId);
+        } else if (assessmentType == 2 && kpointId != null) {
+            baseWrapper.eq(AssessmentRecord::getKpointId, kpointId);
+        }
+
+        // 1. 系统总排名（按该单元所有用户最高分排名）
+        List<AssessmentRecord> allRecords = assessmentRecordMapper.selectList(baseWrapper);
+
+        // 按学生分组，取每个学生的最高分
+        Map<Long, Integer> studentMaxScores = allRecords.stream()
+                .collect(Collectors.groupingBy(
+                        AssessmentRecord::getStudentId,
+                        Collectors.collectingAndThen(
+                                Collectors.maxBy(Comparator.comparingInt(AssessmentRecord::getFinalScore)),
+                                opt -> opt.map(AssessmentRecord::getFinalScore).orElse(0)
+                        )
+                ));
+
+        int systemTotal = studentMaxScores.size();
+        int higherThanMe = (int) studentMaxScores.values().stream()
+                .filter(s -> s > score)
+                .count();
+        int systemRank = higherThanMe + 1;
+
+        rankingInfo.setSystemTotal(systemTotal);
+        rankingInfo.setSystemRank(systemRank);
+        rankingInfo.setSystemBeatPercent(systemTotal > 1 ?
+                BigDecimal.valueOf((double) (systemTotal - systemRank) / (systemTotal - 1))
+                        .setScale(4, RoundingMode.HALF_UP) :
+                BigDecimal.ONE);
+
+        // 2. 同年级排名（按学年：9月到次年6月）
+        // 简化处理：目前按同一学年内的记录计算
+        // TODO: 后续可以结合学生年级信息进行更精确的计算
+        LocalDateTime now = LocalDateTime.now();
+        int currentYear = now.getYear();
+        int currentMonth = now.getMonthValue();
+
+        // 确定学年范围
+        LocalDateTime startOfYear;
+        LocalDateTime endOfYear;
+        if (currentMonth >= 9) {
+            // 当前是9月之后，学年是 currentYear.9 ~ (currentYear+1).6
+            startOfYear = LocalDateTime.of(currentYear, 9, 1, 0, 0, 0);
+            endOfYear = LocalDateTime.of(currentYear + 1, 6, 30, 23, 59, 59);
+        } else {
+            // 当前是1-8月，学年是 (currentYear-1).9 ~ currentYear.6
+            startOfYear = LocalDateTime.of(currentYear - 1, 9, 1, 0, 0, 0);
+            endOfYear = LocalDateTime.of(currentYear, 6, 30, 23, 59, 59);
+        }
+
+        // 查询本学年的记录
+        LambdaQueryWrapper<AssessmentRecord> classWrapper = baseWrapper.clone();
+        classWrapper.ge(AssessmentRecord::getCompletedAt, startOfYear)
+                .le(AssessmentRecord::getCompletedAt, endOfYear);
+
+        List<AssessmentRecord> classRecords = assessmentRecordMapper.selectList(classWrapper);
+
+        // 按学生分组，取每个学生的最高分
+        Map<Long, Integer> classStudentMaxScores = classRecords.stream()
+                .collect(Collectors.groupingBy(
+                        AssessmentRecord::getStudentId,
+                        Collectors.collectingAndThen(
+                                Collectors.maxBy(Comparator.comparingInt(AssessmentRecord::getFinalScore)),
+                                opt -> opt.map(AssessmentRecord::getFinalScore).orElse(0)
+                        )
+                ));
+
+        int classTotal = classStudentMaxScores.size();
+        int classHigherThanMe = (int) classStudentMaxScores.values().stream()
+                .filter(s -> s > score)
+                .count();
+        int classRank = classHigherThanMe + 1;
+
+        rankingInfo.setClassTotal(classTotal);
+        rankingInfo.setClassRank(classRank);
+        rankingInfo.setClassBeatPercent(classTotal > 1 ?
+                BigDecimal.valueOf((double) (classTotal - classRank) / (classTotal - 1))
+                        .setScale(4, RoundingMode.HALF_UP) :
+                BigDecimal.ONE);
+
+        log.info("排名计算完成 - 学生ID:{}, 系统排名:{}/{}, 同年级排名:{}/{}",
+                studentId, systemRank, systemTotal, classRank, classTotal);
+
+        return rankingInfo;
+    }
+
+    @Override
+    public List<HistoryTrendVO> getHistoryTrend(Long studentId, Long chapterId, Integer limit) {
+        log.info("获取历史趋势数据 - 学生ID:{}, 章节ID:{}, 限制:{}", studentId, chapterId, limit);
+
+        if (limit == null || limit <= 0) {
+            limit = 6;  // 默认返回6条
+        }
+
+        LambdaQueryWrapper<AssessmentRecord> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(AssessmentRecord::getStudentId, studentId)
+                .eq(AssessmentRecord::getAssessmentType, 1)  // 章节测评
+                .eq(AssessmentRecord::getChapterId, chapterId)
+                .eq(AssessmentRecord::getStatus, 1)  // 已完成
+                .orderByDesc(AssessmentRecord::getCompletedAt)
+                .last("LIMIT " + limit);
+
+        List<AssessmentRecord> records = assessmentRecordMapper.selectList(wrapper);
+
+        // 倒序排列，让时间线从早到晚
+        Collections.reverse(records);
+
+        List<HistoryTrendVO> trends = records.stream()
+                .map(record -> new HistoryTrendVO()
+                        .setDate(record.getCompletedAt())
+                        .setScore(record.getFinalScore())
+                        .setAbility(record.getAbilityScore())
+                        .setAccuracy(record.getAccuracy())
+                        .setAssessmentId(record.getId()))
+                .collect(Collectors.toList());
+
+        log.info("历史趋势数据获取完成 - 返回{}条记录", trends.size());
+
+        return trends;
     }
 }

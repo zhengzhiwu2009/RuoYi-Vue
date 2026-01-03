@@ -230,4 +230,31 @@ public class AssessmentController extends BaseController {
             return R.fail(500, "放弃测评失败：" + e.getMessage());
         }
     }
+
+    /**
+     * 获取历史趋势数据
+     * 用于前端绘制进步曲线图
+     */
+    @GetMapping("/history-trend/{chapterId}")
+    @ApiOperation(value = "获取历史趋势", notes = "获取学生在某章节的历史测评趋势数据，用于绘制进步曲线图")
+    public R<List<HistoryTrendVO>> getHistoryTrend(
+            @ApiParam(value = "章节ID", required = true)
+            @PathVariable Long chapterId,
+
+            @ApiParam(value = "返回记录数", defaultValue = "6")
+            @RequestParam(defaultValue = "6") Integer limit) {
+
+        Long studentId = SecurityUtils.getLoginUser().getUserId();
+
+        log.info("获取历史趋势 - 学生ID:{}, 章节ID:{}, 限制:{}", studentId, chapterId, limit);
+
+        try {
+            List<HistoryTrendVO> trends = assessmentService.getHistoryTrend(studentId, chapterId, limit);
+            return R.ok(trends);
+
+        } catch (Exception e) {
+            log.error("获取历史趋势失败", e);
+            return R.fail(500, "获取历史趋势失败：" + e.getMessage());
+        }
+    }
 }
